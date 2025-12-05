@@ -1,19 +1,17 @@
 <?php
 /**
- * Marketplace Stock Sync v2
+ * Marketplace Stock Sync
  */
 
 if (!defined('_PS_VERSION_')) {
     exit;
 }
 
-// FONTOS: Az osztály neve MpStockSync, nem MpStockSync_v2!
 class MpStockSync extends Module
 {
     public function __construct()
     {
-        // A modul azonosítója a mappanev alapján: mpstocksync_v2
-        $this->name = 'mpstocksync_v2';
+        $this->name = 'mpstocksync';
         $this->tab = 'administration';
         $this->version = '2.0.0';
         $this->author = 'markoopapa';
@@ -22,7 +20,7 @@ class MpStockSync extends Module
         
         parent::__construct();
         
-        $this->displayName = $this->l('Marketplace Stock Sync v2');
+        $this->displayName = $this->l('Marketplace Stock Sync');
         $this->description = $this->l('Sync stock between PrestaShop and marketplaces');
         $this->confirmUninstall = $this->l('Are you sure you want to uninstall?');
         
@@ -38,7 +36,7 @@ class MpStockSync extends Module
             return false;
         }
         
-        // Adatbázis táblák létrehozása
+        // Adatbázis táblák
         $sql = array();
         
         $sql[] = 'CREATE TABLE IF NOT EXISTS `'._DB_PREFIX_.'mp_stock_product_mapping` (
@@ -80,10 +78,6 @@ class MpStockSync extends Module
             return false;
         }
         
-        // Opcionális: táblák törlése
-        // $sql = 'DROP TABLE IF EXISTS `'._DB_PREFIX_.'mp_stock_product_mapping`';
-        // Db::getInstance()->execute($sql);
-        
         Configuration::deleteByName('MP_STOCK_API_KEY');
         Configuration::deleteByName('MP_STOCK_API_SECRET');
         
@@ -92,7 +86,6 @@ class MpStockSync extends Module
     
     public function getContent()
     {
-        // Átirányítás az API beállításokhoz
         Tools::redirectAdmin(
             $this->context->link->getAdminLink('AdminMpStockSyncApi')
         );
