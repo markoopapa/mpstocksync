@@ -10,4 +10,18 @@ class ProductMapping
         
         return Db::getInstance()->getRow($sql);
     }
+    
+    public static function saveMapping($data)
+    {
+        return Db::getInstance()->insert('mpstocksync_mapping', $data);
+    }
+    
+    public static function updateMapping($id_mapping, $data)
+    {
+        return Db::getInstance()->update(
+            'mpstocksync_mapping',
+            $data,
+            'id_mapping = ' . (int)$id_mapping
+        );
+    }
 }
