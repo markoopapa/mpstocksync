@@ -36,22 +36,22 @@ class MpStockSync extends Module
     }
     
     public function install()
-{
-    if (!parent::install()) {
-        return false;
-    }
-    
-    // Install database tables
-    if (!$this->installDatabase()) {
-        $this->_errors[] = 'Database installation failed: ' . Db::getInstance()->getMsgError();
-        return false;
-    }
-    
-    // Install admin tabs
-    if (!$this->installTabs()) {
-        $this->_errors[] = 'Tab installation failed';
-        return false;
-    }
+    {
+        if (!parent::install()) {
+            return false;
+        }
+        
+        // Install database tables
+        if (!$this->installDatabase()) {
+            $this->_errors[] = 'Database installation failed: ' . Db::getInstance()->getMsgError();
+            return false;
+        }
+        
+        // Install admin tabs - JAVÍTVA
+        if (!$this->installTabs()) {
+            $this->_errors[] = 'Tab installation failed';
+            return false;
+        }
         
         // Register hooks
         $hooks = [
@@ -229,11 +229,12 @@ class MpStockSync extends Module
     
     private function installTabs()
     {
+        // JAVÍTVA: "Beállítások" menü alá rakjuk
         $tabs = [
             [
                 'class_name' => 'AdminMpStockSync',
                 'name' => 'Stock Sync',
-                'parent' => 'AdminCatalog',
+                'parent' => 'AdminParentPreferences',  // Beállítások menü
                 'icon' => 'sync'
             ],
             [
@@ -274,18 +275,28 @@ class MpStockSync extends Module
             $tab->class_name = $tabData['class_name'];
             $tab->module = $this->name;
             
+            // JAVÍTVA: Megfelelő parent keresés
             if (isset($tabData['parent'])) {
-                $tab->id_parent = Tab::getIdFromClassName($tabData['parent']);
+                $parentId = Tab::getIdFromClassName($tabData['parent']);
+                if ($parentId) {
+                    $tab->id_parent = $parentId;
+                } else {
+                    // Ha nem találja a parent tab-ot, rakja a főmenübe
+                    $tab->id_parent = 0;
+                }
             } else {
                 $tab->id_parent = 0;
             }
             
+            // JAVÍTVA: Nyelvi nevek
             foreach (Language::getLanguages() as $lang) {
-                $tab->name[$lang['id_lang']] = $tabData['name'];
+                $tab->name[$lang['id_lang']] = $this->l($tabData['name']);
             }
             
             if (!$tab->add()) {
                 $this->_errors[] = 'Failed to create tab: ' . $tabData['name'];
+                // JAVÍTVA: Ha nem sikerül, töröljük az eddigieket
+                $this->uninstallTabs();
                 return false;
             }
         }
