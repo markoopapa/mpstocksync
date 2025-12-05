@@ -36,20 +36,22 @@ class MpStockSync extends Module
     }
     
     public function install()
-    {
-        if (!parent::install()) {
-            return false;
-        }
-        
-        // Install database tables
-        if (!$this->installDatabase()) {
-            return false;
-        }
-        
-        // Install admin tabs
-        if (!$this->installTabs()) {
-            return false;
-        }
+{
+    if (!parent::install()) {
+        return false;
+    }
+    
+    // Install database tables
+    if (!$this->installDatabase()) {
+        $this->_errors[] = 'Database installation failed: ' . Db::getInstance()->getMsgError();
+        return false;
+    }
+    
+    // Install admin tabs
+    if (!$this->installTabs()) {
+        $this->_errors[] = 'Tab installation failed';
+        return false;
+    }
         
         // Register hooks
         $hooks = [
