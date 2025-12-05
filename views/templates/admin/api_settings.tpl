@@ -1,162 +1,211 @@
-<div class="panel">
-    <div class="panel-heading">
-        <i class="icon-cogs"></i> {ucfirst($api_name)} API Configuration
-        <div class="pull-right">
-            <a href="{$current_url}&configure=emag" class="btn btn-default{if $api_name == 'emag'} active{/if}">
-                <i class="icon-shop"></i> eMAG
-            </a>
-            <a href="{$current_url}&configure=trendyol" class="btn btn-default{if $api_name == 'trendyol'} active{/if}">
-                <i class="icon-truck"></i> Trendyol
-            </a>
-        </div>
-    </div>
+<form action="{$post_url|escape:'html':'UTF-8'}" method="post" class="form-horizontal">
+    <input type="hidden" name="token" value="{$token|escape:'html':'UTF-8'}">
     
-    <div class="panel-body">
-        {if $test_result}
-            <div class="alert alert-{if $test_result.success}success{else}danger{/if}">
-                <h4><i class="icon-{if $test_result.success}check{else}remove{/if}"></i> Connection Test Result</h4>
-                <p>{$test_result.message}</p>
+    <div class="panel">
+        <div class="panel-heading">
+            <i class="icon-cogs"></i> {l s='API Settings - Stock Sync Only' mod='mpstocksync'}
+        </div>
+        
+        <!-- eMAG Settings -->
+        <div class="panel">
+            <div class="panel-heading">
+                <i class="icon-cog"></i> {l s='eMAG Stock Sync' mod='mpstocksync'}
+                <button type="submit" name="test_emag_connection" class="btn btn-default pull-right">
+                    <i class="icon-check"></i> {l s='Test Connection' mod='mpstocksync'}
+                </button>
             </div>
-        {/if}
-        
-        {$form}
-        
-        <div class="row">
-            <div class="col-md-6">
-                <div class="panel panel-info">
-                    <div class="panel-heading">
-                        <i class="icon-info"></i> {ucfirst($api_name)} API Information
-                    </div>
-                    <div class="panel-body">
-                        {if $api_name == 'emag'}
-                            <p><strong>API Documentation:</strong></p>
-                            <p>
-                                <a href="https://marketplace-api.emag.ro/api-docs/" target="_blank" class="btn btn-default btn-sm">
-                                    <i class="icon-external-link"></i> Open eMAG API Docs
-                                </a>
-                            </p>
-                            
-                            <p><strong>Test Environment:</strong></p>
-                            <p>
-                                <a href="https://marketplace-api-sandbox.emag.ro/" target="_blank" class="btn btn-default btn-sm">
-                                    <i class="icon-external-link"></i> Open Sandbox
-                                </a>
-                            </p>
-                            
-                            <p><strong>Required Credentials:</strong></p>
-                            <ul>
-                                <li>Client ID (from eMAG developer account)</li>
-                                <li>Client Secret (from eMAG developer account)</li>
-                                <li>Username (your eMAG marketplace email)</li>
-                                <li>Password (your eMAG marketplace password)</li>
-                            </ul>
-                            
-                            <p><strong>Note:</strong> eMAG requires SKU as product identifier.</p>
-                            
-                        {elseif $api_name == 'trendyol'}
-                            <p><strong>API Documentation:</strong></p>
-                            <p>
-                                <a href="https://developers.trendyol.com/" target="_blank" class="btn btn-default btn-sm">
-                                    <i class="icon-external-link"></i> Open Trendyol API Docs
-                                </a>
-                            </p>
-                            
-                            <p><strong>Required Credentials:</strong></p>
-                            <ul>
-                                <li>API Key (from Trendyol supplier panel)</li>
-                                <li>API Secret (from Trendyol supplier panel)</li>
-                                <li>Supplier ID (your Trendyol supplier ID)</li>
-                            </ul>
-                            
-                            <p><strong>Important Notes:</strong></p>
-                            <ul>
-                                <li>Trendyol requires EAN13 barcodes for product identification</li>
-                                <li>Make sure your products have valid EAN13 codes</li>
-                                <li>Prices should be in Turkish Lira (TRY)</li>
-                            </ul>
-                        {/if}
+            <div class="panel-body">
+                <div class="form-group">
+                    <label class="control-label col-lg-3">{l s='API URL' mod='mpstocksync'}</label>
+                    <div class="col-lg-9">
+                        <input type="text" name="emag_api_url" value="{$config.emag.api_url|escape:'html':'UTF-8'}" class="form-control" 
+                               placeholder="https://marketplace.emag.ro/api-3">
                     </div>
                 </div>
-            </div>
-            
-            <div class="col-md-6">
-                <div class="panel panel-warning">
-                    <div class="panel-heading">
-                        <i class="icon-warning"></i> Configuration Status
+                
+                <div class="form-group">
+                    <label class="control-label col-lg-3">{l s='Client ID' mod='mpstocksync'}</label>
+                    <div class="col-lg-9">
+                        <input type="text" name="emag_client_id" value="{$config.emag.client_id|escape:'html':'UTF-8'}" class="form-control">
                     </div>
-                    <div class="panel-body">
-                        <h4>Current Status:</h4>
-                        
-                        {if $api_config.configured}
-                            <div class="alert alert-success">
-                                <i class="icon-check"></i> 
-                                <strong>{ucfirst($api_name)} API is configured</strong><br>
-                                Status: {if $api_config.status}<span class="label label-success">Enabled</span>{else}<span class="label label-danger">Disabled</span>{/if}<br>
-                                Mode: {if $api_config.test_mode}<span class="label label-info">Test Mode</span>{else}<span class="label label-warning">Live Mode</span>{/if}<br>
-                                Auto Sync: {if $api_config.auto_sync}<span class="label label-success">On</span>{else}<span class="label label-default">Off</span>{/if}
-                            </div>
-                        {else}
-                            <div class="alert alert-danger">
-                                <i class="icon-remove"></i> 
-                                <strong>{ucfirst($api_name)} API is not configured</strong><br>
-                                Please fill in the API credentials above.
-                            </div>
-                        {/if}
-                        
-                        <hr>
-                        
-                        <h4>Next Steps:</h4>
-                        <ol>
-                            <li>Enter your API credentials</li>
-                            <li>Click "Test Connection" to verify</li>
-                            <li>Enable the API if test is successful</li>
-                            <li>Configure product mappings</li>
-                            <li>Enable auto-sync if desired</li>
-                        </ol>
-                        
-                        <div class="alert alert-info">
-                            <i class="icon-lightbulb"></i> 
-                            <strong>Tip:</strong> Always test in <strong>Test Mode</strong> first before going live.
-                        </div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="control-label col-lg-3">{l s='Client Secret' mod='mpstocksync'}</label>
+                    <div class="col-lg-9">
+                        <input type="password" name="emag_client_secret" value="{$config.emag.client_secret|escape:'html':'UTF-8'}" class="form-control">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="control-label col-lg-3">{l s='Username' mod='mpstocksync'}</label>
+                    <div class="col-lg-9">
+                        <input type="text" name="emag_username" value="{$config.emag.username|escape:'html':'UTF-8'}" class="form-control">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="control-label col-lg-3">{l s='Password' mod='mpstocksync'}</label>
+                    <div class="col-lg-9">
+                        <input type="password" name="emag_password" value="{$config.emag.password|escape:'html':'UTF-8'}" class="form-control">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="control-label col-lg-3">{l s='Auto Stock Sync' mod='mpstocksync'}</label>
+                    <div class="col-lg-9">
+                        <span class="switch prestashop-switch fixed-width-lg">
+                            <input type="radio" name="emag_auto_sync" id="emag_auto_sync_on" value="1" {if $config.emag.auto_sync}checked="checked"{/if}>
+                            <label for="emag_auto_sync_on">{l s='Yes' mod='mpstocksync'}</label>
+                            <input type="radio" name="emag_auto_sync" id="emag_auto_sync_off" value="0" {if !$config.emag.auto_sync}checked="checked"{/if}>
+                            <label for="emag_auto_sync_off">{l s='No' mod='mpstocksync'}</label>
+                            <a class="slide-button btn"></a>
+                        </span>
+                        <p class="help-block">{l s='Automatically sync stock changes to eMAG' mod='mpstocksync'}</p>
                     </div>
                 </div>
             </div>
         </div>
+        
+        <!-- Trendyol Settings -->
+        <div class="panel">
+            <div class="panel-heading">
+                <i class="icon-cog"></i> {l s='Trendyol Stock Sync' mod='mpstocksync'}
+                <button type="submit" name="test_trendyol_connection" class="btn btn-default pull-right">
+                    <i class="icon-check"></i> {l s='Test Connection' mod='mpstocksync'}
+                </button>
+            </div>
+            <div class="panel-body">
+                <div class="form-group">
+                    <label class="control-label col-lg-3">{l s='API URL' mod='mpstocksync'}</label>
+                    <div class="col-lg-9">
+                        <input type="text" name="trendyol_api_url" value="{$config.trendyol.api_url|escape:'html':'UTF-8'}" class="form-control" 
+                               placeholder="https://api.trendyol.com/sapigw/">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="control-label col-lg-3">{l s='Seller ID' mod='mpstocksync'}</label>
+                    <div class="col-lg-9">
+                        <input type="text" name="trendyol_seller_id" value="{$config.trendyol.seller_id|escape:'html':'UTF-8'}" class="form-control">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="control-label col-lg-3">{l s='API Key' mod='mpstocksync'}</label>
+                    <div class="col-lg-9">
+                        <input type="password" name="trendyol_api_key" value="{$config.trendyol.api_key|escape:'html':'UTF-8'}" class="form-control">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="control-label col-lg-3">{l s='API Secret' mod='mpstocksync'}</label>
+                    <div class="col-lg-9">
+                        <input type="password" name="trendyol_api_secret" value="{$config.trendyol.api_secret|escape:'html':'UTF-8'}" class="form-control">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="control-label col-lg-3">{l s='Supplier ID' mod='mpstocksync'}</label>
+                    <div class="col-lg-9">
+                        <input type="text" name="trendyol_supplier_id" value="{$config.trendyol.supplier_id|escape:'html':'UTF-8'}" class="form-control">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="control-label col-lg-3">{l s='Auto Stock Sync' mod='mpstocksync'}</label>
+                    <div class="col-lg-9">
+                        <span class="switch prestashop-switch fixed-width-lg">
+                            <input type="radio" name="trendyol_auto_sync" id="trendyol_auto_sync_on" value="1" {if $config.trendyol.auto_sync}checked="checked"{/if}>
+                            <label for="trendyol_auto_sync_on">{l s='Yes' mod='mpstocksync'}</label>
+                            <input type="radio" name="trendyol_auto_sync" id="trendyol_auto_sync_off" value="0" {if !$config.trendyol.auto_sync}checked="checked"{/if}>
+                            <label for="trendyol_auto_sync_off">{l s='No' mod='mpstocksync'}</label>
+                            <a class="slide-button btn"></a>
+                        </span>
+                        <p class="help-block">{l s='Automatically sync stock changes to Trendyol' mod='mpstocksync'}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- General Stock Sync Settings -->
+        <div class="panel">
+            <div class="panel-heading">
+                <i class="icon-wrench"></i> {l s='General Stock Sync Settings' mod='mpstocksync'}
+            </div>
+            <div class="panel-body">
+                <div class="form-group">
+                    <label class="control-label col-lg-3">{l s='Enable Logging' mod='mpstocksync'}</label>
+                    <div class="col-lg-9">
+                        <span class="switch prestashop-switch fixed-width-lg">
+                            <input type="radio" name="log_enabled" id="log_enabled_on" value="1" {if $config.general.log_enabled}checked="checked"{/if}>
+                            <label for="log_enabled_on">{l s='Yes' mod='mpstocksync'}</label>
+                            <input type="radio" name="log_enabled" id="log_enabled_off" value="0" {if !$config.general.log_enabled}checked="checked"{/if}>
+                            <label for="log_enabled_off">{l s='No' mod='mpstocksync'}</label>
+                            <a class="slide-button btn"></a>
+                        </span>
+                        <p class="help-block">{l s='Log all stock sync activities' mod='mpstocksync'}</p>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="control-label col-lg-3">{l s='Sync Interval (seconds)' mod='mpstocksync'}</label>
+                    <div class="col-lg-9">
+                        <input type="number" name="sync_interval" value="{$config.general.sync_interval|intval}" class="form-control" min="30" max="3600">
+                        <p class="help-block">{l s='How often to check for stock changes (min 30 seconds)' mod='mpstocksync'}</p>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="control-label col-lg-3">{l s='Auto Retry Failed Syncs' mod='mpstocksync'}</label>
+                    <div class="col-lg-9">
+                        <span class="switch prestashop-switch fixed-width-lg">
+                            <input type="radio" name="auto_retry" id="auto_retry_on" value="1" {if $config.general.auto_retry}checked="checked"{/if}>
+                            <label for="auto_retry_on">{l s='Yes' mod='mpstocksync'}</label>
+                            <input type="radio" name="auto_retry" id="auto_retry_off" value="0" {if !$config.general.auto_retry}checked="checked"{/if}>
+                            <label for="auto_retry_off">{l s='No' mod='mpstocksync'}</label>
+                            <a class="slide-button btn"></a>
+                        </span>
+                        <p class="help-block">{l s='Automatically retry failed stock syncs' mod='mpstocksync'}</p>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="control-label col-lg-3">{l s='Retry Attempts' mod='mpstocksync'}</label>
+                    <div class="col-lg-9">
+                        <input type="number" name="retry_attempts" value="{$config.general.retry_attempts|intval}" class="form-control" min="0" max="10">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label class="control-label col-lg-3">{l s='Retry Delay (seconds)' mod='mpstocksync'}</label>
+                    <div class="col-lg-9">
+                        <input type="number" name="retry_delay" value="{$config.general.retry_delay|intval}" class="form-control" min="0" max="3600">
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Save Button -->
+        <div class="panel-footer">
+            <button type="submit" name="submit_api_settings" class="btn btn-default pull-right">
+                <i class="process-icon-save"></i> {l s='Save Stock Sync Settings' mod='mpstocksync'}
+            </button>
+        </div>
     </div>
-</div>
+</form>
 
 <style>
-.btn.active {
-    font-weight: bold;
-    border: 2px solid #333;
+.panel {
+    margin-bottom: 20px;
 }
-.btn-default.active {
-    background-color: #337ab7;
-    color: white;
-    border-color: #2e6da4;
+.panel-heading {
+    background: #f5f5f5;
+    border-bottom: 1px solid #ddd;
+}
+.help-block {
+    margin-top: 5px;
+    color: #777;
+    font-size: 12px;
 }
 </style>
-
-<script>
-$(document).ready(function() {
-    // Form submission handling
-    $('form').on('submit', function(e) {
-        var form = $(this);
-        var submitName = $('[name^="save_"]:focus, [name^="test_"]:focus').attr('name');
-        
-        if (submitName) {
-            // Remove any existing hidden input
-            $('input[name="' + submitName + '"]').remove();
-            
-            // Add hidden input with the button name
-            form.append('<input type="hidden" name="' + submitName + '" value="1">');
-        }
-    });
-    
-    // Active button styling
-    $('.btn-default').on('click', function() {
-        $('.btn-default').removeClass('active');
-        $(this).addClass('active');
-    });
-});
-</script>
