@@ -1,0 +1,4 @@
+mpstocksync:
+  resource: .
+  type: admin
+  prefix: /admin-dev/index.php
