@@ -1,5 +1,6 @@
 <?php
-// NINCS namespace! Sima class, mert manuálisan töltjük be
+namespace MpStockSync\Services;  // ← EZT TARTSUK MEG!
+
 class EmagService
 {
     private $apiUrl;
@@ -20,26 +21,15 @@ class EmagService
     
     public function updateStock($sku, $quantity)
     {
-        try {
-            // TODO: Implement real eMAG API call
-            // For now, return mock response
-            
-            return [
-                'success' => true,
-                'http_code' => 200,
-                'message' => 'Stock updated successfully (MOCK)',
-                'data' => [
-                    'sku' => $sku,
-                    'quantity' => $quantity
-                ]
-            ];
-            
-        } catch (Exception $e) {
-            return [
-                'success' => false,
-                'message' => $e->getMessage()
-            ];
-        }
+        // Mock implementation
+        return [
+            'success' => true,
+            'message' => 'Stock updated successfully (MOCK)',
+            'data' => [
+                'sku' => $sku,
+                'quantity' => $quantity
+            ]
+        ];
     }
     
     public function testConnection()
