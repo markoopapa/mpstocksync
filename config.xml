@@ -3,7 +3,7 @@
     <name>mpstocksync</name>
     <displayName><![CDATA[MP Stock Sync Pro]]></displayName>
     <version><![CDATA[2.0.0]]></version>
-    <description><![CDATA[Professional eMAG and Trendyol stock synchronization module]]></description>
+    <description><![CDATA[Professional stock synchronization for eMAG, Trendyol and suppliers]]></description>
     <author><![CDATA[MP Team]]></author>
     <tab>administration</tab>
     <is_configurable>1</is_configurable>
