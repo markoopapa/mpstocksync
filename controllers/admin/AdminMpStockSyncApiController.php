@@ -1,91 +1,80 @@
 <?php
-
 class AdminMpStockSyncApiController extends ModuleAdminController
 {
     public function __construct()
     {
-        $this->bootstrap = true;
-        $this->table = 'configuration';
-        $this->className = 'Configuration';
-        
         parent::__construct();
-        
-        // További inicializálások...
+        $this->bootstrap = true;
     }
-
-    /**
-     * Process save
-     */
-    public function processSave()
-    {
-        if (Tools::isSubmit('submit' . $this->table)) {
-            $api_key = Tools::getValue('MP_STOCK_API_KEY');
-            $api_secret = Tools::getValue('MP_STOCK_API_SECRET');
-            
-            if (!empty($api_key) && !empty($api_secret)) {
-                Configuration::updateValue('MP_STOCK_API_KEY', $api_key);
-                Configuration::updateValue('MP_STOCK_API_SECRET', $api_secret);
-                
-                $this->confirmations[] = $this->l('Settings saved successfully');
-            } else {
-                $this->errors[] = $this->l('Please fill all fields');
-            }
-        }
-    }
-
-    /**
-     * Render form
-     */
-    public function renderForm()
-    {
-        $this->fields_form = [
-            'legend' => [
-                'title' => $this->l('API Settings'),
-                'icon' => 'icon-cogs'
-            ],
-            'input' => [
-                [
-                    'type' => 'text',
-                    'label' => $this->l('API Key'),
-                    'name' => 'MP_STOCK_API_KEY',
-                    'required' => true,
-                    'col' => 4
-                ],
-                [
-                    'type' => 'password',
-                    'label' => $this->l('API Secret'),
-                    'name' => 'MP_STOCK_API_SECRET',
-                    'required' => true,
-                    'col' => 4
-                ]
-            ],
-            'submit' => [
-                'title' => $this->l('Save'),
-                'class' => 'btn btn-default pull-right'
-            ]
-        ];
-        
-        $this->fields_value = [
-            'MP_STOCK_API_KEY' => Configuration::get('MP_STOCK_API_KEY'),
-            'MP_STOCK_API_SECRET' => Configuration::get('MP_STOCK_API_SECRET')
-        ];
-        
-        return parent::renderForm();
-    }
-
-    /**
-     * Post process
-     */
-    public function postProcess()
-    {
-        $this->processSave();
-        parent::postProcess();
-    }
-
+    
     public function initContent()
     {
         parent::initContent();
-        $this->context->smarty->assign('content', $this->renderForm());
-        $this->setTemplate('api_settings.tpl');
+        
+        // Konfigurációs értékek gyűjtése
+        $config_values = [
+            'emag' => [
+                'api_url' => Configuration::get('MP_EMAG_API_URL'),
+                'client_id' => Configuration::get('MP_EMAG_CLIENT_ID'),
+                'client_secret' => Configuration::get('MP_EMAG_CLIENT_SECRET'),
+                'username' => Configuration::get('MP_EMAG_USERNAME'),
+                'password' => Configuration::get('MP_EMAG_PASSWORD'),
+                'auto_sync' => Configuration::get('MP_EMAG_AUTO_SYNC')
+            ],
+            'trendyol' => [
+                'api_url' => Configuration::get('MP_TRENDYOL_API_URL'),
+                'api_key' => Configuration::get('MP_TRENDYOL_API_KEY'),
+                'api_secret' => Configuration::get('MP_TRENDYOL_API_SECRET'),
+                'supplier_id' => Configuration::get('MP_TRENDYOL_SUPPLIER_ID'),
+                'auto_sync' => Configuration::get('MP_TRENDYOL_AUTO_SYNC')
+            ],
+            'general' => [
+                'log_enabled' => Configuration::get('MP_LOG_ENABLED'),
+                'notify_errors' => Configuration::get('MP_NOTIFY_ERRORS'),
+                'auto_retry' => Configuration::get('MP_AUTO_RETRY'),
+                'retry_attempts' => Configuration::get('MP_RETRY_ATTEMPTS'),
+                'retry_delay' => Configuration::get('MP_RETRY_DELAY')
+            ]
+        ];
+        
+        $this->context->smarty->assign([
+            'config' => $config_values,
+            'module_dir' => Module::getInstanceByName('mpstocksync')->getLocalPath(),
+            'post_url' => $this->context->link->getAdminLink('AdminMpStockSyncApi'),
+            'token' => Tools::getAdminTokenLite('AdminMpStockSyncApi')
+        ]);
+        
+        $this->setTemplate('api_settings/api_settings.tpl');
+    }
+    
+    public function postProcess()
+    {
+        if (Tools::isSubmit('submit_api_settings')) {
+            // eMAG beállítások
+            Configuration::updateValue('MP_EMAG_API_URL', Tools::getValue('emag_api_url'));
+            Configuration::updateValue('MP_EMAG_CLIENT_ID', Tools::getValue('emag_client_id'));
+            Configuration::updateValue('MP_EMAG_CLIENT_SECRET', Tools::getValue('emag_client_secret'));
+            Configuration::updateValue('MP_EMAG_USERNAME', Tools::getValue('emag_username'));
+            Configuration::updateValue('MP_EMAG_PASSWORD', Tools::getValue('emag_password'));
+            Configuration::updateValue('MP_EMAG_AUTO_SYNC', Tools::getValue('emag_auto_sync'));
+            
+            // Trendyol beállítások
+            Configuration::updateValue('MP_TRENDYOL_API_URL', Tools::getValue('trendyol_api_url'));
+            Configuration::updateValue('MP_TRENDYOL_API_KEY', Tools::getValue('trendyol_api_key'));
+            Configuration::updateValue('MP_TRENDYOL_API_SECRET', Tools::getValue('trendyol_api_secret'));
+            Configuration::updateValue('MP_TRENDYOL_SUPPLIER_ID', Tools::getValue('trendyol_supplier_id'));
+            Configuration::updateValue('MP_TRENDYOL_AUTO_SYNC', Tools::getValue('trendyol_auto_sync'));
+            
+            // Általános beállítások
+            Configuration::updateValue('MP_LOG_ENABLED', Tools::getValue('log_enabled'));
+            Configuration::updateValue('MP_NOTIFY_ERRORS', Tools::getValue('notify_errors'));
+            Configuration::updateValue('MP_AUTO_RETRY', Tools::getValue('auto_retry'));
+            Configuration::updateValue('MP_RETRY_ATTEMPTS', Tools::getValue('retry_attempts'));
+            Configuration::updateValue('MP_RETRY_DELAY', Tools::getValue('retry_delay'));
+            
+            $this->confirmations[] = $this->l('Settings saved successfully');
+        }
+        
+        parent::postProcess();
     }
 }
