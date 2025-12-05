@@ -47,7 +47,7 @@ class MpStockSync extends Module
             return false;
         }
         
-        // Install admin tabs - JAVÍTVA
+        // Install admin tabs - MÓDOSÍTVA: Főmenübe rakjuk
         if (!$this->installTabs()) {
             $this->_errors[] = 'Tab installation failed';
             return false;
@@ -61,7 +61,8 @@ class MpStockSync extends Module
             'actionAdminControllerSetMedia',
             'actionObjectStockAddAfter',
             'actionObjectStockUpdateAfter',
-            'actionObjectStockDeleteAfter'
+            'actionObjectStockDeleteAfter',
+            'displayAdminNavBarBeforeEnd'  // ÚJ: Admin navbar-ba ikon
         ];
         
         foreach ($hooks as $hook) {
@@ -80,7 +81,8 @@ class MpStockSync extends Module
             'MP_RETRY_DELAY' => 60,
             'MP_EMAG_AUTO_SYNC' => 0,
             'MP_TRENDYOL_AUTO_SYNC' => 0,
-            'MP_SUPPLIER_AUTO_SYNC' => 0
+            'MP_SUPPLIER_AUTO_SYNC' => 0,
+            'MP_LAST_SYNC_LOG' => ''
         ];
         
         foreach ($defaults as $key => $value) {
@@ -99,7 +101,8 @@ class MpStockSync extends Module
             'MP_EMAG_API_URL', 'MP_EMAG_CLIENT_ID', 'MP_EMAG_CLIENT_SECRET',
             'MP_EMAG_USERNAME', 'MP_EMAG_PASSWORD', 'MP_EMAG_AUTO_SYNC',
             'MP_TRENDYOL_API_URL', 'MP_TRENDYOL_API_KEY', 'MP_TRENDYOL_API_SECRET',
-            'MP_TRENDYOL_SUPPLIER_ID', 'MP_TRENDYOL_AUTO_SYNC'
+            'MP_TRENDYOL_SUPPLIER_ID', 'MP_TRENDYOL_AUTO_SYNC',
+            'MP_LAST_SYNC_LOG'
         ];
         
         foreach ($configs as $config) {
@@ -217,6 +220,21 @@ class MpStockSync extends Module
             INDEX `supplier_date` (`id_supplier`, `date_add`)
         ) ENGINE='._MYSQL_ENGINE_.' DEFAULT CHARSET=utf8;';
         
+        // Recent sync log table (új tábla)
+        $sql[] = 'CREATE TABLE IF NOT EXISTS `'._DB_PREFIX_.'mpstocksync_recent_log` (
+            `id_log` INT(11) UNSIGNED NOT NULL AUTO_INCREMENT,
+            `sync_type` VARCHAR(50) NOT NULL,
+            `products_count` INT(11) DEFAULT 0,
+            `success_count` INT(11) DEFAULT 0,
+            `error_count` INT(11) DEFAULT 0,
+            `duration` INT(11) DEFAULT 0,
+            `initiated_by` VARCHAR(50),
+            `details` TEXT,
+            `date_add` DATETIME NOT NULL,
+            PRIMARY KEY (`id_log`),
+            INDEX `sync_date` (`sync_type`, `date_add`)
+        ) ENGINE='._MYSQL_ENGINE_.' DEFAULT CHARSET=utf8;';
+        
         foreach ($sql as $query) {
             if (!Db::getInstance()->execute($query)) {
                 $this->_errors[] = 'Database error: ' . Db::getInstance()->getMsgError();
@@ -229,12 +247,12 @@ class MpStockSync extends Module
     
     private function installTabs()
     {
-        // JAVÍTVA: "Beállítások" menü alá rakjuk
+        // MÓDOSÍTVA: Stock Sync tab a főmenübe (nem Quick Actions)
         $tabs = [
             [
                 'class_name' => 'AdminMpStockSync',
                 'name' => 'Stock Sync',
-                'parent' => 'AdminParentPreferences',  // Beállítások menü
+                'parent' => 0,  // 0 = Főmenü!
                 'icon' => 'sync'
             ],
             [
@@ -275,27 +293,27 @@ class MpStockSync extends Module
             $tab->class_name = $tabData['class_name'];
             $tab->module = $this->name;
             
-            // JAVÍTVA: Megfelelő parent keresés
             if (isset($tabData['parent'])) {
-                $parentId = Tab::getIdFromClassName($tabData['parent']);
-                if ($parentId) {
-                    $tab->id_parent = $parentId;
+                if (is_numeric($tabData['parent'])) {
+                    $tab->id_parent = (int)$tabData['parent'];
                 } else {
-                    // Ha nem találja a parent tab-ot, rakja a főmenübe
-                    $tab->id_parent = 0;
+                    $parentId = Tab::getIdFromClassName($tabData['parent']);
+                    if ($parentId) {
+                        $tab->id_parent = $parentId;
+                    } else {
+                        $tab->id_parent = 0;
+                    }
                 }
             } else {
                 $tab->id_parent = 0;
             }
             
-            // JAVÍTVA: Nyelvi nevek
             foreach (Language::getLanguages() as $lang) {
                 $tab->name[$lang['id_lang']] = $this->l($tabData['name']);
             }
             
             if (!$tab->add()) {
                 $this->_errors[] = 'Failed to create tab: ' . $tabData['name'];
-                // JAVÍTVA: Ha nem sikerül, töröljük az eddigieket
                 $this->uninstallTabs();
                 return false;
             }
@@ -332,6 +350,86 @@ class MpStockSync extends Module
         Tools::redirectAdmin($this->context->link->getAdminLink('AdminMpStockSyncDashboard'));
     }
     
+    /**
+     * ÚJ: Friss sync log mentése
+     */
+    public function logSyncActivity($sync_type, $products_count, $success_count, $error_count, $duration, $initiated_by = 'system', $details = '')
+    {
+        Db::getInstance()->insert('mpstocksync_recent_log', [
+            'sync_type' => pSQL($sync_type),
+            'products_count' => (int)$products_count,
+            'success_count' => (int)$success_count,
+            'error_count' => (int)$error_count,
+            'duration' => (int)$duration,
+            'initiated_by' => pSQL($initiated_by),
+            'details' => pSQL($details),
+            'date_add' => date('Y-m-d H:i:s')
+        ]);
+        
+        // Mentjük a legutóbbi sync logot konfigurációba is
+        $log_message = date('Y-m-d H:i:s') . " - " . $sync_type . " sync: " . 
+                      $success_count . " successful, " . $error_count . " errors";
+        Configuration::updateValue('MP_LAST_SYNC_LOG', $log_message);
+    }
+    
+    /**
+     * ÚJ: Legutóbbi sync log lekérése
+     */
+    public function getLastSyncLog()
+    {
+        $log = Configuration::get('MP_LAST_SYNC_LOG');
+        if (empty($log)) {
+            return $this->l('No sync activities yet');
+        }
+        return $log;
+    }
+    
+    /**
+     * ÚJ: Legutóbbi sync-ek lekérése
+     */
+    public function getRecentSyncs($limit = 10)
+    {
+        $sql = 'SELECT * FROM `'._DB_PREFIX_.'mpstocksync_recent_log`
+                ORDER BY date_add DESC
+                LIMIT ' . (int)$limit;
+        
+        return Db::getInstance()->executeS($sql);
+    }
+    
+    /**
+     * ÚJ: Hook az admin navbar-ba
+     */
+    public function hookDisplayAdminNavBarBeforeEnd($params)
+    {
+        $last_sync = $this->getLastSyncLog();
+        
+        // CSS és JS hozzáadása
+        $this->context->controller->addCSS($this->_path . 'views/css/navbar.css');
+        
+        // HTML a navbar-ba
+        return '
+        <style>
+        .mp-sync-status {
+            display: inline-block;
+            margin-left: 15px;
+            padding: 5px 10px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            border-left: 4px solid #25b9d7;
+            font-size: 12px;
+        }
+        .mp-sync-status.success {
+            border-left-color: #34c759;
+        }
+        .mp-sync-status.error {
+            border-left-color: #ff3b30;
+        }
+        </style>
+        <div class="mp-sync-status" title="' . htmlspecialchars($last_sync) . '">
+            <i class="icon-sync"></i> ' . htmlspecialchars(substr($last_sync, 0, 50)) . '
+        </div>';
+    }
+    
     public function hookActionUpdateQuantity($params)
     {
         if (!isset($params['id_product'])) {
@@ -356,12 +454,35 @@ class MpStockSync extends Module
         ]);
         
         // Auto-sync to marketplaces if enabled
+        $start_time = microtime(true);
+        $sync_results = [
+            'emag' => false,
+            'trendyol' => false
+        ];
+        
         if (Configuration::get('MP_EMAG_AUTO_SYNC')) {
-            $this->syncToEmag($id_product, $id_product_attribute, $new_quantity);
+            $sync_results['emag'] = $this->syncToEmag($id_product, $id_product_attribute, $new_quantity);
         }
         
         if (Configuration::get('MP_TRENDYOL_AUTO_SYNC')) {
-            $this->syncToTrendyol($id_product, $id_product_attribute, $new_quantity);
+            $sync_results['trendyol'] = $this->syncToTrendyol($id_product, $id_product_attribute, $new_quantity);
+        }
+        
+        // Log sync activity
+        $duration = round((microtime(true) - $start_time) * 1000); // ms
+        $success_count = count(array_filter($sync_results));
+        $error_count = count($sync_results) - $success_count;
+        
+        if ($success_count > 0 || $error_count > 0) {
+            $this->logSyncActivity(
+                'auto_stock_update',
+                1, // 1 termék
+                $success_count,
+                $error_count,
+                $duration,
+                'system',
+                json_encode(['product_id' => $id_product, 'sync_results' => $sync_results])
+            );
         }
     }
     
@@ -508,6 +629,8 @@ class MpStockSync extends Module
     
     public function manualSyncAll($api_name = null)
     {
+        $start_time = microtime(true);
+        
         $products = Product::getProducts(
             Context::getContext()->language->id,
             0,
@@ -521,7 +644,8 @@ class MpStockSync extends Module
         $results = [
             'total' => 0,
             'success' => 0,
-            'errors' => 0
+            'errors' => 0,
+            'details' => []
         ];
         
         foreach ($products as $product) {
@@ -531,10 +655,13 @@ class MpStockSync extends Module
             if ($api_name === 'emag' || $api_name === null) {
                 if (Configuration::get('MP_EMAG_AUTO_SYNC')) {
                     $results['total']++;
-                    if ($this->syncToEmag($id_product, 0, $quantity)) {
+                    $sync_result = $this->syncToEmag($id_product, 0, $quantity);
+                    if ($sync_result) {
                         $results['success']++;
+                        $results['details'][] = ['product_id' => $id_product, 'api' => 'emag', 'status' => 'success'];
                     } else {
                         $results['errors']++;
+                        $results['details'][] = ['product_id' => $id_product, 'api' => 'emag', 'status' => 'error'];
                     }
                 }
             }
@@ -542,14 +669,30 @@ class MpStockSync extends Module
             if ($api_name === 'trendyol' || $api_name === null) {
                 if (Configuration::get('MP_TRENDYOL_AUTO_SYNC')) {
                     $results['total']++;
-                    if ($this->syncToTrendyol($id_product, 0, $quantity)) {
+                    $sync_result = $this->syncToTrendyol($id_product, 0, $quantity);
+                    if ($sync_result) {
                         $results['success']++;
+                        $results['details'][] = ['product_id' => $id_product, 'api' => 'trendyol', 'status' => 'success'];
                     } else {
                         $results['errors']++;
+                        $results['details'][] = ['product_id' => $id_product, 'api' => 'trendyol', 'status' => 'error'];
                     }
                 }
             }
         }
+        
+        $duration = round((microtime(true) - $start_time) * 1000); // ms
+        
+        // Log sync activity
+        $this->logSyncActivity(
+            'manual_sync_all',
+            $results['total'],
+            $results['success'],
+            $results['errors'],
+            $duration,
+            'manual',
+            json_encode($results['details'])
+        );
         
         return $results;
     }
@@ -557,8 +700,28 @@ class MpStockSync extends Module
     public function syncSupplier($supplier_id)
     {
         try {
+            $start_time = microtime(true);
+            
             $service = new SupplierSyncService($supplier_id);
-            return $service->syncSupplierToShops($supplier_id);
+            $result = $service->syncSupplierToShops($supplier_id);
+            
+            $duration = round((microtime(true) - $start_time) * 1000); // ms
+            
+            // Log sync activity
+            if (isset($result['products_count'])) {
+                $this->logSyncActivity(
+                    'supplier_sync',
+                    $result['products_count'],
+                    $result['success_count'] ?? 0,
+                    $result['error_count'] ?? 0,
+                    $duration,
+                    'system',
+                    json_encode($result)
+                );
+            }
+            
+            return $result;
+            
         } catch (Exception $e) {
             return [
                 'success' => false,
@@ -601,6 +764,10 @@ class MpStockSync extends Module
         $supplierStats = Db::getInstance()->executeS($sql);
         
         $stats['suppliers'] = $supplierStats;
+        
+        // Recent syncs
+        $stats['recent_syncs'] = $this->getRecentSyncs(5);
+        $stats['last_sync_log'] = $this->getLastSyncLog();
         
         return $stats;
     }
