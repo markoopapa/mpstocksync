@@ -1,108 +1,126 @@
 <?php
-
 namespace MpStockSync\Service;
 
 use MpStockSync\ApiClient\SupplierApiClient;
-use MpStockSync\Repository\MappingRepository;
-use PrestaShopDatabaseException;
-use PrestaShopException;
+use MpStockSync\Service\SupplierMappingService;
+use MpStockSync\Service\LocalStockService;
+use Db;
+use Exception;
 
+/**
+ * SupplierSyncService
+ * - orchestrates: fetch from supplier API, map, update local shop(s)
+ */
 class SupplierSyncService
 {
-    /**
-     * @var SupplierApiClient
-     */
     private $supplierApiClient;
+    private $mappingService;
+    private $localStockService;
+    private $supplierConfig;
 
     /**
-     * @var MappingRepository
+     * $supplierConfig array expected keys:
+     *  - api_url
+     *  - api_key
+     *  - id_supplier
+     *  - target_shops (json encoded array of shop ids) optional
      */
-    private $mappingRepository;
-
-    public function __construct()
+    public function __construct(array $supplierConfig)
     {
-        $this->supplierApiClient = new SupplierApiClient();
-        $this->mappingRepository = new MappingRepository();
+        $this->supplierConfig = $supplierConfig;
+        $this->supplierApiClient = new SupplierApiClient($supplierConfig['api_url'], $supplierConfig['api_key']);
+        $this->mappingService = new SupplierMappingService();
+        $this->localStockService = new LocalStockService();
     }
 
     /**
-     * Fő sync folyamat a supplier → te boltod között
-     *
-     * @return array
+     * Sync supplier -> target shops (only stock)
+     * Returns summary array
      */
-    public function syncFromSupplierToMainShop()
+    public function sync(): array
     {
-        $log = [];
+        $start = microtime(true);
+        $summary = [
+            'success' => false,
+            'fetched' => 0,
+            'updated' => 0,
+            'skipped' => 0,
+            'errors' => [],
+            'duration_ms' => 0
+        ];
 
-        // 1. Supplier API lekérés
-        $supplierProducts = $this->supplierApiClient->getProducts();
+        $resp = $this->supplierApiClient->getProducts();
 
-        if (empty($supplierProducts)) {
-            return ['error' => 'No supplier products fetched'];
+        if (!$resp['success']) {
+            $summary['errors'][] = 'Fetch error: ' . ($resp['error'] ?? 'unknown');
+            $summary['duration_ms'] = round((microtime(true) - $start) * 1000);
+            return $summary;
         }
 
-        foreach ($supplierProducts as $sp) {
+        $supplierProducts = $resp['products'];
+        $summary['fetched'] = count($supplierProducts);
 
-            $supplierReference = $sp['reference'];
-            $supplierQty = (int)$sp['quantity'];
+        // Ensure mapping table exists (safe to call)
+        $this->mappingService->install();
 
-            // Mapping keresése supplier reference alapján
-            $mapping = $this->mappingRepository->findBySupplierReference($supplierReference);
+        // Auto-generate empty mappings for quick review (non-active)
+        $this->mappingService->autoGenerateMappings((int)$this->supplierConfig['id_supplier'], $supplierProducts);
 
-            if (!$mapping) {
-                $log[] = "NO MAP → " . $supplierReference;
+        // For each supplier product, find mapping and update stock in selected shops
+        foreach ($supplierProducts as $p) {
+            $ref = $p['reference'] ?? '';
+            $qty = (int)($p['quantity'] ?? 0);
+
+            if ($ref === '') {
+                $summary['skipped']++;
                 continue;
             }
 
-            if (!(int)$mapping['active']) {
-                $log[] = "INACTIVE MAP → " . $supplierReference;
+            $map = $this->mappingService->getMapping((int)$this->supplierConfig['id_supplier'], $ref);
+
+            if (!$map) {
+                // no mapping yet — skip (admin can activate mapping later)
+                $summary['skipped']++;
                 continue;
             }
 
-            $yourReference = $mapping['your_reference'];
-
-            // PrestaShop termék ID felkutatása
-            $idProduct = $this->getProductIdByReference($yourReference);
-
-            if (!$idProduct) {
-                $log[] = "MISSING PRODUCT → YourRef: {$yourReference}";
+            if ((int)$map['sync_enabled'] !== 1) {
+                $summary['skipped']++;
                 continue;
             }
 
-            // Készlet frissítés
-            $this->updateStock($idProduct, $supplierQty);
+            // if local_id_product is set, update its stock (and optionally product_attribute)
+            $localProductId = (int)$map['local_id_product'];
+            $localAttr = isset($map['local_id_product_attribute']) ? (int)$map['local_id_product_attribute'] : 0;
 
-            $log[] = "UPDATED: {$yourReference} → Qty: {$supplierQty}";
+            if ($localProductId <= 0) {
+                $summary['skipped']++;
+                continue;
+            }
+
+            try {
+                // update for primary shop (your shop)
+                $this->localStockService->updateStockInShop($localProductId, $localAttr, $qty);
+
+                // update for additional target shops if configured
+                if (!empty($this->supplierConfig['target_shops'])) {
+                    $targets = json_decode($this->supplierConfig['target_shops'], true);
+                    if (is_array($targets)) {
+                        foreach ($targets as $shopId) {
+                            $this->localStockService->updateStockInShop($localProductId, $localAttr, $qty, (int)$shopId);
+                        }
+                    }
+                }
+
+                $summary['updated']++;
+            } catch (Exception $e) {
+                $summary['errors'][] = 'Error updating ' . $ref . ': ' . $e->getMessage();
+            }
         }
 
-        return $log;
-    }
+        $summary['success'] = true;
+        $summary['duration_ms'] = round((microtime(true) - $start) * 1000);
 
-    /**
-     * Termék ID keresése referencia szerint
-     *
-     * @param string $reference
-     * @return int|null
-     */
-    private function getProductIdByReference($reference)
-    {
-        $sql = 'SELECT id_product FROM ' . _DB_PREFIX_ . 'product WHERE reference = "' . pSQL($reference) . '"';
-        return (int)\Db::getInstance()->getValue($sql) ?: null;
-    }
-
-    /**
-     * PrestaShop készlet frissítése
-     *
-     * @param int $idProduct
-     * @param int $qty
-     *
-     * @return void
-     *
-     * @throws PrestaShopDatabaseException
-     * @throws PrestaShopException
-     */
-    private function updateStock($idProduct, $qty)
-    {
-        \StockAvailable::setQuantity($idProduct, 0, $qty);
+        return $summary;
     }
 }
