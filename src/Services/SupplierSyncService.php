@@ -1,61 +1,108 @@
 <?php
-namespace MpStockSync\Services;  // ← UGYANAZ A NAMESPACE!
+
+namespace MpStockSync\Service;
+
+use MpStockSync\ApiClient\SupplierApiClient;
+use MpStockSync\Repository\MappingRepository;
+use PrestaShopDatabaseException;
+use PrestaShopException;
 
 class SupplierSyncService
 {
-    private $supplierConfig;
-    
-    public function __construct($supplierId)
+    /**
+     * @var SupplierApiClient
+     */
+    private $supplierApiClient;
+
+    /**
+     * @var MappingRepository
+     */
+    private $mappingRepository;
+
+    public function __construct()
     {
-        $this->loadSupplierConfig($supplierId);
+        $this->supplierApiClient = new SupplierApiClient();
+        $this->mappingRepository = new MappingRepository();
     }
-    
-    private function loadSupplierConfig($supplierId)
+
+    /**
+     * Fő sync folyamat a supplier → te boltod között
+     *
+     * @return array
+     */
+    public function syncFromSupplierToMainShop()
     {
-        $sql = 'SELECT * FROM `'._DB_PREFIX_.'mpstocksync_suppliers`
-                WHERE id_supplier = '.(int)$supplierId;
-        
-        $this->supplierConfig = Db::getInstance()->getRow($sql);
-        
-        if (!$this->supplierConfig) {
-            throw new \Exception('Supplier configuration not found');
+        $log = [];
+
+        // 1. Supplier API lekérés
+        $supplierProducts = $this->supplierApiClient->getProducts();
+
+        if (empty($supplierProducts)) {
+            return ['error' => 'No supplier products fetched'];
         }
-    }
-    
-    public function syncSupplierToShops($supplierId)
-    {
-        // Mock implementation
-        return [
-            'success' => true,
-            'total' => 15,
-            'updated' => 12,
-            'errors' => 3,
-            'message' => 'Supplier sync completed (MOCK)'
-        ];
-    }
-    
-    public function testConnection()
-    {
-        if ($this->supplierConfig['connection_type'] == 'database') {
-            return $this->testDatabaseConnection();
-        } else {
-            return $this->testApiConnection();
+
+        foreach ($supplierProducts as $sp) {
+
+            $supplierReference = $sp['reference'];
+            $supplierQty = (int)$sp['quantity'];
+
+            // Mapping keresése supplier reference alapján
+            $mapping = $this->mappingRepository->findBySupplierReference($supplierReference);
+
+            if (!$mapping) {
+                $log[] = "NO MAP → " . $supplierReference;
+                continue;
+            }
+
+            if (!(int)$mapping['active']) {
+                $log[] = "INACTIVE MAP → " . $supplierReference;
+                continue;
+            }
+
+            $yourReference = $mapping['your_reference'];
+
+            // PrestaShop termék ID felkutatása
+            $idProduct = $this->getProductIdByReference($yourReference);
+
+            if (!$idProduct) {
+                $log[] = "MISSING PRODUCT → YourRef: {$yourReference}";
+                continue;
+            }
+
+            // Készlet frissítés
+            $this->updateStock($idProduct, $supplierQty);
+
+            $log[] = "UPDATED: {$yourReference} → Qty: {$supplierQty}";
         }
+
+        return $log;
     }
-    
-    private function testDatabaseConnection()
+
+    /**
+     * Termék ID keresése referencia szerint
+     *
+     * @param string $reference
+     * @return int|null
+     */
+    private function getProductIdByReference($reference)
     {
-        return [
-            'success' => true,
-            'message' => 'Database connection successful (MOCK)'
-        ];
+        $sql = 'SELECT id_product FROM ' . _DB_PREFIX_ . 'product WHERE reference = "' . pSQL($reference) . '"';
+        return (int)\Db::getInstance()->getValue($sql) ?: null;
     }
-    
-    private function testApiConnection()
+
+    /**
+     * PrestaShop készlet frissítése
+     *
+     * @param int $idProduct
+     * @param int $qty
+     *
+     * @return void
+     *
+     * @throws PrestaShopDatabaseException
+     * @throws PrestaShopException
+     */
+    private function updateStock($idProduct, $qty)
     {
-        return [
-            'success' => true,
-            'message' => 'API connection successful (MOCK)'
-        ];
+        \StockAvailable::setQuantity($idProduct, 0, $qty);
     }
 }
