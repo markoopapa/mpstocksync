@@ -1,15 +1,8 @@
 services:
-  MpStockSync\Services\EmagService:
-    arguments:
-      $apiUrl: '%env(MP_EMAG_API_URL)%'
-      $clientId: '%env(MP_EMAG_CLIENT_ID)%'
-      $clientSecret: '%env(MP_EMAG_CLIENT_SECRET)%'
-      $username: '%env(MP_EMAG_USERNAME)%'
-      $password: '%env(MP_EMAG_PASSWORD)%'
-    
-  MpStockSync\Services\TrendyolService:
-    arguments:
-      $apiUrl: '%env(MP_TRENDYOL_API_URL)%'
-      $apiKey: '%env(MP_TRENDYOL_API_KEY)%'
-      $apiSecret: '%env(MP_TRENDYOL_API_SECRET)%'
-      $supplierId: '%env(MP_TRENDYOL_SUPPLIER_ID)%'
+    MpStockSync\Services\TrendyolService:
+        class: MpStockSync\Services\TrendyolService
+        arguments:
+            $apiUrl: '%mpstocksync.trendyol.api_url%'
+            $sellerId: '%mpstocksync.trendyol.seller_id%'
+            $apiKey: '%mpstocksync.trendyol.api_key%'
+            $apiSecret: '%mpstocksync.trendyol.api_secret%'
