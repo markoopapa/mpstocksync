@@ -1,10 +1,12 @@
 <?php
-
 namespace MpStockSync\Service;
 
 use Db;
-use PrestaShopDatabaseException;
 
+/**
+ * SupplierMappingService
+ * - manages mapping table: supplier_reference -> local product id
+ */
 class SupplierMappingService
 {
     private $db;
@@ -16,9 +18,6 @@ class SupplierMappingService
         $this->table = _DB_PREFIX_ . 'mpstocksync_supplier_map';
     }
 
-    /**
-     * Create mapping table if not exists
-     */
     public function install()
     {
         $sql = "
@@ -34,114 +33,78 @@ class SupplierMappingService
             INDEX (`local_id_product`)
         ) ENGINE=" . _MYSQL_ENGINE_ . " DEFAULT CHARSET=utf8;
         ";
-
         return $this->db->execute($sql);
     }
 
-    /**
-     * Save or update a mapping entry
-     */
-    public function saveMapping($supplierId, $supplierRef, $localIdProduct, $localIdAttr, $syncEnabled = 1)
-    {
-        $supplierRef = pSQL($supplierRef);
-
-        // Check if exists
-        $existing = $this->getMapping($supplierId, $supplierRef);
-
-        if ($existing) {
-            $sql = "
-                UPDATE `{$this->table}`
-                SET 
-                    `local_id_product` = " . (int) $localIdProduct . ",
-                    `local_id_product_attribute` = " . (int) $localIdAttr . ",
-                    `sync_enabled` = " . (int) $syncEnabled . "
-                WHERE `id_map` = " . (int) $existing['id_map'] . "
-            ";
-        } else {
-            $sql = "
-                INSERT INTO `{$this->table}`
-                (`id_supplier`, `supplier_reference`, `local_id_product`, `local_id_product_attribute`, `sync_enabled`)
-                VALUES (
-                    " . (int) $supplierId . ",
-                    '{$supplierRef}',
-                    " . (int) $localIdProduct . ",
-                    " . (int) $localIdAttr . ",
-                    " . (int) $syncEnabled . "
-                )
-            ";
-        }
-
-        return $this->db->execute($sql);
-    }
-
-    /**
-     * Get mapping for a single supplier reference
-     */
-    public function getMapping($supplierId, $supplierRef)
+    public function getMapping(int $supplierId, string $supplierRef)
     {
         $sql = "
             SELECT *
             FROM `{$this->table}`
-            WHERE id_supplier = " . (int) $supplierId . "
-            AND supplier_reference = '" . pSQL($supplierRef) . "'
+            WHERE id_supplier = " . (int)$supplierId . "
+              AND supplier_reference = '" . pSQL($supplierRef) . "'
+            LIMIT 1
         ";
-
         return $this->db->getRow($sql);
     }
 
-    /**
-     * Get all mappings for supplier ID
-     */
-    public function getMappingsBySupplier($supplierId)
-    {
-        $sql = "
-            SELECT *
-            FROM `{$this->table}`
-            WHERE id_supplier = " . (int) $supplierId . "
-            ORDER BY supplier_reference ASC
-        ";
-
-        return $this->db->executeS($sql);
-    }
-
-    /**
-     * Auto-create missing mappings from supplier API products
-     */
-    public function autoGenerateMappings($supplierId, $supplierProducts)
+    public function autoGenerateMappings(int $supplierId, array $supplierProducts)
     {
         foreach ($supplierProducts as $p) {
-            if (!isset($p['reference'])) {
+            if (empty($p['reference'])) {
                 continue;
             }
-
             $ref = pSQL($p['reference']);
-            $existing = $this->getMapping($supplierId, $ref);
-
-            if (!$existing) {
-                $this->saveMapping($supplierId, $ref, null, null, 0);
+            $exists = $this->db->getValue("
+                SELECT COUNT(*) FROM `{$this->table}`
+                WHERE id_supplier = " . (int)$supplierId . " AND supplier_reference = '{$ref}'
+            ");
+            if (!(int)$exists) {
+                $this->db->insert('mpstocksync_supplier_map', [
+                    'id_supplier' => (int)$supplierId,
+                    'supplier_reference' => $ref,
+                    'local_id_product' => null,
+                    'local_id_product_attribute' => null,
+                    'sync_enabled' => 0
+                ]);
             }
         }
     }
 
-    /**
-     * Enable/disable sync for mapping
-     */
-    public function setSyncEnabled($idMap, $enabled)
+    public function saveMapping(int $supplierId, string $supplierRef, ?int $localProductId, ?int $localProductAttr, int $syncEnabled = 1)
     {
-        $sql = "
-            UPDATE `{$this->table}`
-            SET sync_enabled = " . (int) $enabled . "
-            WHERE id_map = " . (int) $idMap . "
-        ";
-
-        return $this->db->execute($sql);
+        $existing = $this->getMapping($supplierId, $supplierRef);
+        if ($existing) {
+            return $this->db->update('mpstocksync_supplier_map', [
+                'local_id_product' => (int)$localProductId,
+                'local_id_product_attribute' => (int)$localProductAttr,
+                'sync_enabled' => (int)$syncEnabled
+            ], 'id_map = ' . (int)$existing['id_map']);
+        } else {
+            return $this->db->insert('mpstocksync_supplier_map', [
+                'id_supplier' => (int)$supplierId,
+                'supplier_reference' => pSQL($supplierRef),
+                'local_id_product' => (int)$localProductId,
+                'local_id_product_attribute' => (int)$localProductAttr,
+                'sync_enabled' => (int)$syncEnabled
+            ]);
+        }
     }
 
-    /**
-     * Delete mapping
-     */
-    public function deleteMapping($idMap)
+    public function getMappingsBySupplier(int $supplierId): array
     {
-        return $this->db->delete($this->table, '`id_map` = ' . (int) $idMap);
+        return $this->db->executeS("
+            SELECT * FROM `{$this->table}` WHERE id_supplier = " . (int)$supplierId . " ORDER BY supplier_reference ASC
+        ") ?: [];
+    }
+
+    public function setSyncEnabled(int $idMap, int $enabled)
+    {
+        return $this->db->update('mpstocksync_supplier_map', ['sync_enabled' => (int)$enabled], 'id_map = ' . (int)$idMap);
+    }
+
+    public function deleteMapping(int $idMap)
+    {
+        return $this->db->delete('mpstocksync_supplier_map', 'id_map = ' . (int)$idMap);
     }
 }
