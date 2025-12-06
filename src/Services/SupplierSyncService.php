@@ -1,126 +1,95 @@
 <?php
-namespace MpStockSync\Service;
 
-use MpStockSync\ApiClient\SupplierApiClient;
-use MpStockSync\Service\SupplierMappingService;
-use MpStockSync\Service\LocalStockService;
+namespace Markoopapa\MpStockSync\Service;
+
 use Db;
-use Exception;
+use Configuration;
+use PrestaShopLogger;
 
-/**
- * SupplierSyncService
- * - orchestrates: fetch from supplier API, map, update local shop(s)
- */
 class SupplierSyncService
 {
-    private $supplierApiClient;
-    private $mappingService;
-    private $localStockService;
-    private $supplierConfig;
+    private $apiUrl;
+    private $apiKey;
 
-    /**
-     * $supplierConfig array expected keys:
-     *  - api_url
-     *  - api_key
-     *  - id_supplier
-     *  - target_shops (json encoded array of shop ids) optional
-     */
-    public function __construct(array $supplierConfig)
+    public function __construct()
     {
-        $this->supplierConfig = $supplierConfig;
-        $this->supplierApiClient = new SupplierApiClient($supplierConfig['api_url'], $supplierConfig['api_key']);
-        $this->mappingService = new SupplierMappingService();
-        $this->localStockService = new LocalStockService();
+        // Később ezeket a Config oldalon állítod majd be
+        $this->apiUrl = Configuration::get('MP_SUPPLIER_URL');
+        $this->apiKey = Configuration::get('MP_SUPPLIER_KEY');
     }
 
     /**
-     * Sync supplier -> target shops (only stock)
-     * Returns summary array
+     * Ez a fő függvény, amit a CRON hív meg
      */
-    public function sync(): array
+    public function syncAllProducts()
     {
-        $start = microtime(true);
-        $summary = [
-            'success' => false,
-            'fetched' => 0,
-            'updated' => 0,
-            'skipped' => 0,
-            'errors' => [],
-            'duration_ms' => 0
-        ];
+        // 1. Lekérjük azokat a termékeket, ahol a SYNC be van kapcsolva
+        $productsToSync = $this->getSyncableProducts();
 
-        $resp = $this->supplierApiClient->getProducts();
-
-        if (!$resp['success']) {
-            $summary['errors'][] = 'Fetch error: ' . ($resp['error'] ?? 'unknown');
-            $summary['duration_ms'] = round((microtime(true) - $start) * 1000);
-            return $summary;
+        if (empty($productsToSync)) {
+            $this->log("No products marked for sync.", "INFO");
+            return;
         }
 
-        $supplierProducts = $resp['products'];
-        $summary['fetched'] = count($supplierProducts);
-
-        // Ensure mapping table exists (safe to call)
-        $this->mappingService->install();
-
-        // Auto-generate empty mappings for quick review (non-active)
-        $this->mappingService->autoGenerateMappings((int)$this->supplierConfig['id_supplier'], $supplierProducts);
-
-        // For each supplier product, find mapping and update stock in selected shops
-        foreach ($supplierProducts as $p) {
-            $ref = $p['reference'] ?? '';
-            $qty = (int)($p['quantity'] ?? 0);
-
-            if ($ref === '') {
-                $summary['skipped']++;
-                continue;
-            }
-
-            $map = $this->mappingService->getMapping((int)$this->supplierConfig['id_supplier'], $ref);
-
-            if (!$map) {
-                // no mapping yet — skip (admin can activate mapping later)
-                $summary['skipped']++;
-                continue;
-            }
-
-            if ((int)$map['sync_enabled'] !== 1) {
-                $summary['skipped']++;
-                continue;
-            }
-
-            // if local_id_product is set, update its stock (and optionally product_attribute)
-            $localProductId = (int)$map['local_id_product'];
-            $localAttr = isset($map['local_id_product_attribute']) ? (int)$map['local_id_product_attribute'] : 0;
-
-            if ($localProductId <= 0) {
-                $summary['skipped']++;
-                continue;
-            }
-
-            try {
-                // update for primary shop (your shop)
-                $this->localStockService->updateStockInShop($localProductId, $localAttr, $qty);
-
-                // update for additional target shops if configured
-                if (!empty($this->supplierConfig['target_shops'])) {
-                    $targets = json_decode($this->supplierConfig['target_shops'], true);
-                    if (is_array($targets)) {
-                        foreach ($targets as $shopId) {
-                            $this->localStockService->updateStockInShop($localProductId, $localAttr, $qty, (int)$shopId);
-                        }
-                    }
-                }
-
-                $summary['updated']++;
-            } catch (Exception $e) {
-                $summary['errors'][] = 'Error updating ' . $ref . ': ' . $e->getMessage();
-            }
+        // 2. Lekérjük a Supplier készletét (API hívás)
+        $supplierStockData = $this->fetchSupplierStock();
+        
+        if (!$supplierStockData) {
+            $this->log("Failed to fetch supplier data.", "ERROR");
+            return;
         }
 
-        $summary['success'] = true;
-        $summary['duration_ms'] = round((microtime(true) - $start) * 1000);
+        // 3. Összefésülés
+        foreach ($productsToSync as $product) {
+            $mySku = $product['supplier_sku']; // A mapping táblánkból
+            
+            if (isset($supplierStockData[$mySku])) {
+                $newQty = (int)$supplierStockData[$mySku];
+                $this->updateLocalStock($product['id_product'], $newQty);
+            }
+        }
+    }
 
-        return $summary;
+    private function getSyncableProducts()
+    {
+        return Db::getInstance()->executeS('
+            SELECT id_product, supplier_sku 
+            FROM `'._DB_PREFIX_.'mp_supplier_map` 
+            WHERE sync_enabled = 1
+        ');
+    }
+    
+    /**
+     * Placeholder: Ide jön majd a tényleges API hívás
+     */
+    private function fetchSupplierStock()
+    {
+        // TODO: Megírni az API klienst
+        // Return formátum: ['SKU123' => 50, 'SKU999' => 0]
+        return []; 
+    }
+
+    private function updateLocalStock($id_product, $quantity)
+    {
+        // PrestaShop beépített készletkezelőjét használjuk (StockAvailable)
+        \StockAvailable::setQuantity($id_product, 0, $quantity);
+        
+        // Frissítjük a last_synced dátumot
+        Db::getInstance()->execute('
+            UPDATE `'._DB_PREFIX_.'mp_supplier_map` 
+            SET last_synced = NOW() 
+            WHERE id_product = ' . (int)$id_product
+        );
+        
+        $this->log("Updated Product ID $id_product to QTY: $quantity", "SUCCESS");
+    }
+
+    private function log($message, $severity)
+    {
+        Db::getInstance()->insert('mp_stock_logs', [
+            'severity' => $severity,
+            'message' => pSQL($message),
+            'date_add' => date('Y-m-d H:i:s')
+        ]);
     }
 }
